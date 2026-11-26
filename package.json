@@ -1,0 +1,19 @@
+{
+  "name": "chase-and-cash-bot-en",
+  "version": "1.0.0",
+  "description": "Bot Discord Chase & Cash (Version Anglaise — embeds & interactions EN, commandes slash admin FR)",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy-commands": "node src/deploy-commands.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7"
+  }
+}
