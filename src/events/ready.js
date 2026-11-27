@@ -13,9 +13,8 @@ export async function execute(client) {
     status: 'online',
     activities: [
       {
-        name: 'Play Chase & Cash',
-        type: ActivityType.Custom,
-        state: 'Play Chase & Cash',
+        name: 'Chase & Cash',
+        type: ActivityType.Playing,
       },
     ],
   });
