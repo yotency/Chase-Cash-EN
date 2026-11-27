@@ -80,6 +80,33 @@ export function getDatabase() {
       message_id TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS polls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT,
+      creator_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      options_json TEXT NOT NULL,
+      allow_multiple INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      closed_at TEXT,
+      closed_by TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS poll_votes (
+      poll_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      option_index INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (poll_id, user_id, option_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_poll_votes_poll
+      ON poll_votes (poll_id);
   `);
 
   return db;
@@ -523,4 +550,181 @@ export function createAvisEntry({
     messageId,
     createdAt,
   };
+}
+
+export function createPollRecord({
+  guildId,
+  channelId,
+  creatorId,
+  title,
+  description = null,
+  options,
+  allowMultiple = false,
+}) {
+  const database = getDatabase();
+  const createdAt = new Date().toISOString();
+
+  const row = database
+    .prepare(`
+      INSERT INTO polls (
+        guild_id,
+        channel_id,
+        creator_id,
+        title,
+        description,
+        options_json,
+        allow_multiple,
+        status,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
+      RETURNING id
+    `)
+    .get(
+      guildId,
+      channelId,
+      creatorId,
+      title,
+      description,
+      JSON.stringify(options),
+      allowMultiple ? 1 : 0,
+      createdAt,
+    );
+
+  return getPollById(row.id);
+}
+
+export function setPollMessageId(pollId, messageId) {
+  const database = getDatabase();
+  database
+    .prepare(`UPDATE polls SET message_id = ? WHERE id = ?`)
+    .run(messageId, pollId);
+  return getPollById(pollId);
+}
+
+export function getPollById(pollId) {
+  const database = getDatabase();
+  const row = database
+    .prepare(`
+      SELECT id, guild_id, channel_id, message_id, creator_id, title, description, options_json, allow_multiple, status, created_at, closed_at, closed_by
+      FROM polls
+      WHERE id = ?
+    `)
+    .get(pollId);
+
+  if (!row) return null;
+
+  let options = [];
+  try {
+    options = JSON.parse(row.options_json);
+  } catch {
+    options = [];
+  }
+
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    channelId: row.channel_id,
+    messageId: row.message_id || null,
+    creatorId: row.creator_id,
+    title: row.title,
+    description: row.description || null,
+    options,
+    allowMultiple: Boolean(row.allow_multiple),
+    status: row.status,
+    createdAt: row.created_at,
+    closedAt: row.closed_at || null,
+    closedBy: row.closed_by || null,
+  };
+}
+
+export function togglePollVote({ pollId, userId, optionIndex, allowMultiple }) {
+  const database = getDatabase();
+  const now = new Date().toISOString();
+
+  const existing = database
+    .prepare(`
+      SELECT option_index
+      FROM poll_votes
+      WHERE poll_id = ? AND user_id = ?
+    `)
+    .all(pollId, userId)
+    .map((r) => r.option_index);
+
+  const alreadyVotedThis = existing.includes(optionIndex);
+
+  if (allowMultiple) {
+    if (alreadyVotedThis) {
+      database
+        .prepare(`
+          DELETE FROM poll_votes
+          WHERE poll_id = ? AND user_id = ? AND option_index = ?
+        `)
+        .run(pollId, userId, optionIndex);
+      return { action: 'removed' };
+    }
+    database
+      .prepare(`
+        INSERT INTO poll_votes (poll_id, user_id, option_index, created_at)
+        VALUES (?, ?, ?, ?)
+      `)
+      .run(pollId, userId, optionIndex, now);
+    return { action: 'added' };
+  }
+
+  database
+    .prepare(`DELETE FROM poll_votes WHERE poll_id = ? AND user_id = ?`)
+    .run(pollId, userId);
+
+  if (alreadyVotedThis) {
+    return { action: 'removed' };
+  }
+
+  database
+    .prepare(`
+      INSERT INTO poll_votes (poll_id, user_id, option_index, created_at)
+      VALUES (?, ?, ?, ?)
+    `)
+    .run(pollId, userId, optionIndex, now);
+
+  return { action: existing.length > 0 ? 'changed' : 'added' };
+}
+
+export function getPollVoteStats(pollId, optionCount) {
+  const database = getDatabase();
+  const rows = database
+    .prepare(`
+      SELECT user_id, option_index
+      FROM poll_votes
+      WHERE poll_id = ?
+    `)
+    .all(pollId);
+
+  const counts = Array.from({ length: optionCount }, () => 0);
+  const voters = new Set();
+
+  for (const row of rows) {
+    if (row.option_index >= 0 && row.option_index < optionCount) {
+      counts[row.option_index] += 1;
+      voters.add(row.user_id);
+    }
+  }
+
+  return {
+    counts,
+    totalVotes: rows.length,
+    totalVoters: voters.size,
+  };
+}
+
+export function closePollRecord(pollId, closedBy) {
+  const database = getDatabase();
+  const closedAt = new Date().toISOString();
+  database
+    .prepare(`
+      UPDATE polls
+      SET status = 'closed', closed_at = ?, closed_by = ?
+      WHERE id = ?
+    `)
+    .run(closedAt, closedBy, pollId);
+  return getPollById(pollId);
 }

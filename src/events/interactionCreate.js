@@ -35,6 +35,14 @@ import {
   handleAvisModalSubmit,
   handleAvisOpenButton,
 } from '../services/avisService.js';
+import {
+  handlePollCloseButton,
+  handlePollModalSubmit,
+  handlePollVoteButton,
+  POLL_CLOSE_PREFIX,
+  POLL_MODAL_PREFIX,
+  POLL_VOTE_PREFIX,
+} from '../services/pollService.js';
 import { createBrandEmbed, withBrandAssets } from '../utils/embed.js';
 
 export const name = Events.InteractionCreate;
@@ -80,6 +88,11 @@ async function handleSelectMenu(interaction) {
 }
 
 async function handleModalSubmit(interaction) {
+  if (interaction.customId.startsWith(POLL_MODAL_PREFIX)) {
+    await handlePollModalSubmit(interaction);
+    return;
+  }
+
   if (interaction.customId === AVIS_MODAL_ID) {
     await handleAvisModalSubmit(interaction);
     return;
@@ -219,6 +232,16 @@ async function handleUserSelectMenu(interaction) {
 }
 
 async function handleButton(interaction) {
+  if (interaction.customId.startsWith(POLL_VOTE_PREFIX)) {
+    await handlePollVoteButton(interaction);
+    return;
+  }
+
+  if (interaction.customId.startsWith(POLL_CLOSE_PREFIX)) {
+    await handlePollCloseButton(interaction);
+    return;
+  }
+
   if (interaction.customId === AVIS_OPEN_BUTTON_ID) {
     await handleAvisOpenButton(interaction);
     return;
